@@ -4,22 +4,27 @@ Tests stay plain pytest. For every test item the plugin records, as report
 user_properties (exported by `--report-log`):
 
 - qt_case_key: hash of the test's path, qualified name and parameter values
-- qt_definition_hash: hash of the test's source plus its module's optional
-  `qt_definition(**params)` (data that defines what a correct result is)
+- qt_definition_hash: hash of the test's body (without decorators, comments or
+  formatting) plus its module's optional `qt_definition(**params)` (data that
+  defines what a correct result is)
 - qt_family: the module's optional `qt_family(**params)`, else the test name
 - qt_repeat, qt_hrid
 
-Options: --qt-runs N, --qt-shard i/n, --qt-seed S.
+Options: --qt-runs N, --qt-shard i/n, --qt-seed S, and --qt-markers a,b to
+require that every test carries exactly one of these markers (so selecting
+one marker per pytest instance runs every test exactly once).
 """
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import hashlib
 import inspect
 import json
 import random
 import re
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +39,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--qt-runs", type=int, default=1, help="runs per test case")
     group.addoption("--qt-shard", default="1/1", help="run shard i of n, e.g. 2/4")
     group.addoption("--qt-seed", type=int, default=0, help="seed of this run")
+    group.addoption(
+        "--qt-markers",
+        default="",
+        help="comma-separated markers; every test must carry exactly one of them",
+    )
 
 
 def _shard(config: pytest.Config) -> tuple[int, int]:
@@ -75,6 +85,16 @@ def canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, default=_encode, ensure_ascii=False)
 
 
+def function_source(function: Any) -> str:
+    """The function without decorators, normalised: markers, parametrization,
+    comments and formatting do not change what a test checks."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    node = tree.body[0]
+    assert isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    node.decorator_list = []
+    return ast.unparse(node)
+
+
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -105,14 +125,31 @@ def identity(item: pytest.Function) -> dict[str, Any]:
         raise pytest.UsageError(f"{item.nodeid}: parameter {error}") from None
     return {
         "qt_case_key": _sha(f"{name}\n{params_json}")[:16],
-        "qt_definition_hash": _sha(inspect.getsource(item.function) + "\n" + definition_json)[:16],
+        "qt_definition_hash": _sha(function_source(item.function) + "\n" + definition_json)[:16],
         "qt_family": _module_hook(item, "qt_family", params) or name,
         "qt_repeat": all_params.get(REPEAT, 0),
         "qt_hrid": _REPEAT_ID.sub("", item.name).removesuffix("[]"),
     }
 
 
+def _check_markers(config: pytest.Config, items: list[pytest.Item]) -> None:
+    required = {m for m in config.getoption("qt_markers").split(",") if m}
+    if not required:
+        return
+    wrong = []
+    for item in items:
+        found = {m.name for m in item.iter_markers()} & required
+        if len(found) != 1:
+            wrong.append(f"{item.nodeid} ({', '.join(sorted(found)) or 'none'})")
+    if wrong:
+        shown = "; ".join(wrong[:5]) + (f" and {len(wrong) - 5} more" if len(wrong) > 5 else "")
+        raise pytest.UsageError(f"every test needs exactly one of {sorted(required)}: {shown}")
+
+
+# tryfirst: see every item before `-m` deselects the other markers.
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    _check_markers(config, items)
     index, total = _shard(config)
     keep, drop = [], []
     for item in items:

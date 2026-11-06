@@ -51,5 +51,4 @@ jobs:
       state: ${{ matrix.item.state }}
       created_by: ${{ matrix.item.created_by }}
       runs: 10
-      shards: 2
     secrets: inherit

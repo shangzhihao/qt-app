@@ -1,5 +1,6 @@
 # Run the quality suite for one state and publish it as a run for qt-analyzer:
 # artifact qt-<run_id>-manifest plus one artifact qt-<run_id>-shard-<i> per shard.
+# Shards are pytest instances, one per marker listed in qt.toml.
 # Callers compute the state (scripts/qt_ci.py) and own concurrency.
 name: qt-test
 
@@ -12,7 +13,6 @@ on:
       created_by: {type: string, default: ""}     # component that created a main state
       pr: {type: string, default: ""}             # JSON PR info for kind=pr
       runs: {type: number, default: 1}
-      shards: {type: number, default: 2}
     secrets:
       QT_PAT: {required: false}
 
@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       shards: ${{ steps.manifest.outputs.shards }}
+      shard_count: ${{ steps.manifest.outputs.shard_count }}
       graph_sha: ${{ steps.manifest.outputs.graph_sha }}
     steps:
       - uses: actions/checkout@v7
@@ -38,16 +39,16 @@ jobs:
           CREATED_BY: ${{ inputs.created_by }}
           PR: ${{ inputs.pr }}
           RUNS: ${{ inputs.runs }}
-          SHARDS: ${{ inputs.shards }}
         run: |
-          args=(manifest --run-id "$RUN_ID" --kind "$KIND" --runs "$RUNS" --shards "$SHARDS"
-                --state "$STATE" --out run)
+          args=(manifest --run-id "$RUN_ID" --kind "$KIND" --runs "$RUNS" --state "$STATE" --out run)
           if [ -n "$CREATED_BY" ]; then args+=(--created-by "$CREATED_BY"); fi
           if [ -n "$PR" ]; then args+=(--pr "$PR"); fi
           python3 scripts/qt_run.py "${args[@]}"
           python3 - <<'EOF' >> "$GITHUB_OUTPUT"
           import json, os
-          print("shards=" + json.dumps(list(range(1, int(os.environ["SHARDS"]) + 1))))
+          manifest = json.load(open(f"run/{os.environ['RUN_ID']}/manifest.json"))
+          print("shards=" + json.dumps(list(range(1, manifest["shards"] + 1))))
+          print(f"shard_count={manifest['shards']}")
           print("graph_sha=" + json.loads(os.environ["STATE"])["graph"]["sha"])
           EOF
       - uses: actions/upload-artifact@v7
@@ -88,7 +89,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: qt-${{ inputs.run_id }}-shard-${{ matrix.shard }}
-          path: run/${{ inputs.run_id }}/shard-${{ matrix.shard }}-of-${{ inputs.shards }}.jsonl.gz
+          path: run/${{ inputs.run_id }}/shard-${{ matrix.shard }}-of-${{ needs.prepare.outputs.shard_count }}.jsonl.gz
           overwrite: true
 
   finalize:
