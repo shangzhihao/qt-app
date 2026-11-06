@@ -4,12 +4,12 @@
     python scripts/qt_run.py shard --manifest DIR/ID/manifest.json --index 1
     python scripts/qt_run.py local --kind main --runs 1 --out qt-runs
 
-A run is split into one pytest instance (shard) per marker listed in qt.toml;
+A run is split into one pytest instance (shard) per marker in [tool.qt.run];
 without markers it is split by case-key hash into `--shards` parts. CI calls
 `manifest` once and `shard` once per runner; `local` does both on one machine.
 
 Component versions come from `--state` (CI) or from the local checkouts:
-qt-graph itself, and every other component in components.toml from
+qt-graph itself, and every other component in [tool.qt.components] from
 QT_COMPONENT_<NAME>_PATH or a sibling directory named after its repo.
 """
 
@@ -45,18 +45,19 @@ def state_id(shas: dict[str, str]) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
+def qt_config(root: Path = ROOT) -> dict[str, Any]:
+    """The [tool.qt] table of pyproject.toml."""
+    with (root / "pyproject.toml").open("rb") as f:
+        return tomllib.load(f).get("tool", {}).get("qt", {})
+
+
 def load_components(root: Path = ROOT) -> dict[str, dict[str, str]]:
-    with (root / "components.toml").open("rb") as f:
-        return tomllib.load(f)["components"]
+    return qt_config(root)["components"]
 
 
 def shard_markers(root: Path = ROOT) -> list[str]:
-    """Markers that split a run into pytest instances, one per marker (qt.toml)."""
-    path = root / "qt.toml"
-    if not path.exists():
-        return []
-    with path.open("rb") as f:
-        return list(tomllib.load(f).get("run", {}).get("markers", []))
+    """Markers that split a run into pytest instances, one per marker."""
+    return list(qt_config(root).get("run", {}).get("markers", []))
 
 
 def env_name(component: str) -> str:
@@ -201,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--kind", choices=["pr", "main", "nightly"], default="main")
         p.add_argument("--runs", type=int, default=1)
         p.add_argument(
-            "--shards", type=int, help="hash shards when qt.toml lists no markers (default 2)"
+            "--shards", type=int, help="hash shards when [tool.qt.run] has no markers (default 2)"
         )
         p.add_argument("--out", type=Path, default=ROOT / "qt-runs")
         p.add_argument("--created-by", default="graph")
@@ -223,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id or f"local-{datetime.now(UTC):%Y%m%dT%H%M%S}-{seed % 10000:04d}"
     markers = shard_markers()
     if markers and args.shards not in (None, len(markers)):
-        parser.error(f"qt.toml splits runs by {len(markers)} markers; --shards must match")
+        parser.error(f"[tool.qt.run] splits runs by {len(markers)} markers; --shards must match")
     shards = len(markers) if markers else (args.shards or 2)
     manifest = make_manifest(
         run_id=run_id,

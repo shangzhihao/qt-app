@@ -10,7 +10,7 @@ from qt_graph.answer import Question, answer
 with (Path(__file__).parent / "cases.toml").open("rb") as f:
     CASES = {c["id"]: c for c in tomllib.load(f)["case"]}
 
-# Every case carries exactly one of the markers listed in qt.toml; CI runs one
+# Every case carries exactly one of the markers in [tool.qt.run]; CI runs one
 # pytest instance per marker.
 CORE_TOPICS = {"benefits", "deadlines", "eligibility", "forms", "income"}
 

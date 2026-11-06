@@ -1,6 +1,6 @@
 # Run the quality suite for one state and publish it as a run for qt-analyzer:
 # artifact qt-<run_id>-manifest plus one artifact qt-<run_id>-shard-<i> per shard.
-# Shards are pytest instances, one per marker listed in qt.toml.
+# Shards are pytest instances, one per marker in pyproject's [tool.qt.run].
 # Callers compute the state (scripts/qt_ci.py) and own concurrency.
 name: qt-test
 
