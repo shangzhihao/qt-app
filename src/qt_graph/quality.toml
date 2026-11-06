@@ -1,0 +1,13 @@
+# Graph-side answer quality per topic (1.0 = full quality). Lowering a value
+# simulates a code regression on that topic.
+[factors]
+benefits = 1.0
+deadlines = 1.0
+documents = 1.0
+eligibility = 1.0
+fees = 1.0
+forms = 1.0
+housing = 1.0
+income = 1.0
+residence = 1.0
+taxes = 1.0
