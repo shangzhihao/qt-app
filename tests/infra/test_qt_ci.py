@@ -1,0 +1,102 @@
+"""state_at, PR states and nightly listing against local git repositories."""
+
+import json
+import os
+import subprocess
+from datetime import UTC, datetime
+
+import pytest
+import qt_ci
+from qt_run import state_key
+
+COMPONENTS = {
+    "graph": {"repo": "me/qt-graph", "branch": "main"},
+    "data": {"repo": "me/qt-data", "branch": "main"},
+}
+
+
+def _git(path, *args, date=None):
+    env = os.environ | {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}  # fmt: skip
+    if date:
+        env |= {"GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+    return subprocess.run(["git", "-C", str(path), *args], check=True, capture_output=True,
+                          text=True, env=env).stdout.strip()  # fmt: skip
+
+
+@pytest.fixture
+def repos(tmp_path):
+    """data d0 (01:00), graph g1 (02:00), data d1 (03:00), graph g2 (04:00); then clones."""
+    origins, shas = {}, {}
+    for name in COMPONENTS:
+        origin = tmp_path / "origin" / name
+        origin.mkdir(parents=True)
+        _git(origin, "init", "-q", "-b", "main")
+        origins[name] = origin
+    for label, name, hour in [("d0", "data", 1), ("g1", "graph", 2), ("d1", "data", 3),
+                              ("g2", "graph", 4)]:  # fmt: skip
+        (origins[name] / "file").write_text(label)
+        _git(origins[name], "add", ".")
+        _git(origins[name], "commit", "-q", "-m", label, date=f"2026-11-01T0{hour}:00:00+00:00")
+        shas[label] = _git(origins[name], "rev-parse", "HEAD")
+    clones = {}
+    for name, origin in origins.items():
+        clones[name] = tmp_path / "clones" / name
+        subprocess.run(["git", "clone", "-q", str(origin), str(clones[name])], check=True)
+    return clones, shas
+
+
+def _shas(state):
+    return {name: v["sha"] for name, v in state.items()}
+
+
+def test_state_at_takes_other_components_at_commit_time(repos):
+    clones, sha = repos
+    assert _shas(qt_ci.state_at("graph", sha["g2"], clones, COMPONENTS)) == {
+        "graph": sha["g2"], "data": sha["d1"]}  # fmt: skip
+    assert _shas(qt_ci.state_at("data", sha["d1"], clones, COMPONENTS)) == {
+        "graph": sha["g1"], "data": sha["d1"]}  # fmt: skip
+    state = qt_ci.state_at("graph", sha["g1"], clones, COMPONENTS)
+    assert state["graph"]["committed_at"].startswith("2026-11-01T02:00:00")
+
+
+def test_state_at_without_an_earlier_commit_fails(repos):
+    clones, sha = repos
+    with pytest.raises(qt_ci.NoState, match="graph has no commit"):
+        qt_ci.state_at("data", sha["d0"], clones, COMPONENTS)
+
+
+def test_pr_state_uses_main_heads_of_other_components(repos):
+    clones, sha = repos
+    assert _shas(qt_ci.pr_state("data", sha["d0"], clones, COMPONENTS)) == {
+        "graph": sha["g2"], "data": sha["d0"]}  # fmt: skip
+
+
+def test_nightly_lists_unevaluated_states_oldest_first(repos):
+    clones, sha = repos
+    now = datetime(2026, 11, 2, tzinfo=UTC)
+    g1_state = {"graph": sha["g1"], "data": sha["d0"]}
+    index = [json.dumps({"status": "complete", "manifest": {
+        "kind": "nightly", "state": {"key": state_key(g1_state)}}})]  # fmt: skip
+
+    # d0 has no graph commit before it, so the window starts after it
+    states, backlog = qt_ci.nightly_states(
+        clones, COMPONENTS, index, lookback_days=1, max_states=1, run_prefix="graph-9", now=now
+    )
+
+    assert backlog == 1
+    assert [s["created_by"] for s in states] == ["data"]
+    assert states[0]["run_id"] == "graph-9-n1"
+    assert _shas(json.loads(states[0]["state"])) == {"graph": sha["g1"], "data": sha["d1"]}
+
+
+def test_nightly_evaluated_ignores_incomplete_and_non_nightly_runs():
+    lines = [
+        json.dumps(
+            {"status": "incomplete", "manifest": {"kind": "nightly", "state": {"key": "a"}}}
+        ),
+        json.dumps({"status": "complete", "manifest": {"kind": "main", "state": {"key": "b"}}}),
+        json.dumps({"status": "complete", "manifest": {"kind": "nightly", "state": {"key": "c"}}}),
+        "",
+    ]
+    assert qt_ci.nightly_evaluated(lines) == {"c"}

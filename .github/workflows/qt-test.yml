@@ -1,0 +1,108 @@
+# Run the quality suite for one state and publish it as a run for qt-analyzer:
+# artifact qt-<run_id>-manifest plus one artifact qt-<run_id>-shard-<i> per shard.
+# Callers compute the state (scripts/qt_ci.py) and own concurrency.
+name: qt-test
+
+on:
+  workflow_call:
+    inputs:
+      run_id: {type: string, required: true}
+      kind: {type: string, required: true}        # pr | main | nightly
+      state: {type: string, required: true}       # JSON {name: {repo, sha, committed_at}}
+      created_by: {type: string, default: ""}     # component that created a main state
+      pr: {type: string, default: ""}             # JSON PR info for kind=pr
+      runs: {type: number, default: 1}
+      shards: {type: number, default: 2}
+    secrets:
+      QT_PAT: {required: false}
+
+permissions:
+  contents: read
+
+env:
+  RUN_ID: ${{ inputs.run_id }}
+  STATE: ${{ inputs.state }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.manifest.outputs.shards }}
+      graph_sha: ${{ steps.manifest.outputs.graph_sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Write the manifest
+        id: manifest
+        env:
+          KIND: ${{ inputs.kind }}
+          CREATED_BY: ${{ inputs.created_by }}
+          PR: ${{ inputs.pr }}
+          RUNS: ${{ inputs.runs }}
+          SHARDS: ${{ inputs.shards }}
+        run: |
+          args=(manifest --run-id "$RUN_ID" --kind "$KIND" --runs "$RUNS" --shards "$SHARDS"
+                --state "$STATE" --out run)
+          if [ -n "$CREATED_BY" ]; then args+=(--created-by "$CREATED_BY"); fi
+          if [ -n "$PR" ]; then args+=(--pr "$PR"); fi
+          python3 scripts/qt_run.py "${args[@]}"
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os
+          print("shards=" + json.dumps(list(range(1, int(os.environ["SHARDS"]) + 1))))
+          print("graph_sha=" + json.loads(os.environ["STATE"])["graph"]["sha"])
+          EOF
+      - uses: actions/upload-artifact@v7
+        with:
+          name: qt-${{ inputs.run_id }}-manifest
+          path: run/${{ inputs.run_id }}/manifest.json
+          overwrite: true
+
+  test:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.prepare.outputs.shards) }}
+    steps:
+      # Tools (this workflow's version) and the tested product version side by side.
+      - uses: actions/checkout@v7
+        with: {path: tools}
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.graph_sha }}
+          path: graph
+      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: actions/download-artifact@v8
+        with:
+          name: qt-${{ inputs.run_id }}-manifest
+          path: run/${{ inputs.run_id }}
+      - name: Check out the other components at the tested versions
+        run: python3 tools/scripts/qt_ci.py checkout --state "$STATE" --dest components
+      - name: Run shard ${{ matrix.shard }}
+        working-directory: graph
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          uv sync -q
+          uv run python scripts/qt_run.py shard --manifest "../run/$RUN_ID/manifest.json" --index "$SHARD"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: qt-${{ inputs.run_id }}-shard-${{ matrix.shard }}
+          path: run/${{ inputs.run_id }}/shard-${{ matrix.shard }}-of-${{ inputs.shards }}.jsonl.gz
+          overwrite: true
+
+  finalize:
+    needs: [prepare, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the analyzer
+        env:
+          GH_TOKEN: ${{ secrets.QT_PAT }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::QT_PAT is not set; the analyzer picks this run up on its daily pass"
+            exit 1
+          fi
+          gh api repos/shangzhihao/qt-analyzer/dispatches -f event_type=qt-wake \
+            -f "client_payload[run_id]=$RUN_ID"

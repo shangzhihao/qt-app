@@ -1,0 +1,45 @@
+# Called BY component repos: tells qt-graph that a component changed main or a PR.
+#
+#   # .github/workflows/qt.yml in a component repo
+#   on:
+#     push: {branches: [main]}
+#     pull_request:
+#   jobs:
+#     qt:
+#       uses: shangzhihao/qt-graph/.github/workflows/qt-component-trigger.yml@main
+#       with: {component: data}
+#       secrets: {QT_PAT: ${{ secrets.QT_PAT }}}
+name: qt-component-trigger
+
+on:
+  workflow_call:
+    inputs:
+      component: {type: string, required: true}
+    secrets:
+      QT_PAT: {required: true}
+
+jobs:
+  dispatch:
+    # Forks get no secrets, so their PRs are not tracked.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify qt-graph
+        env:
+          GH_TOKEN: ${{ secrets.QT_PAT }}
+          COMPONENT: ${{ inputs.component }}
+          EVENT: ${{ github.event_name }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            gh api repos/shangzhihao/qt-graph/dispatches -f event_type=qt-component-pr \
+              -f "client_payload[component]=$COMPONENT" -f "client_payload[repo]=$GITHUB_REPOSITORY" \
+              -f "client_payload[number]=$NUMBER" -f "client_payload[head_sha]=$HEAD_SHA" \
+              -f "client_payload[merge_sha]=$GITHUB_SHA"
+          else
+            gh api repos/shangzhihao/qt-graph/dispatches -f event_type=qt-component-main \
+              -f "client_payload[component]=$COMPONENT" -f "client_payload[sha]=$GITHUB_SHA"
+          fi

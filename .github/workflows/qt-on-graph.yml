@@ -1,0 +1,64 @@
+# A push to main or a pull request in qt-graph: test the resulting state once.
+name: qt (graph)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
+
+concurrency:
+  # Every main state must run; a PR only needs its latest push.
+  group: >-
+    ${{ github.event_name == 'pull_request'
+        && format('qt-pr-{0}-{1}', github.repository, github.event.pull_request.number)
+        || format('qt-main-{0}', github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    # Forks get no secrets, so their PRs are not tracked.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      state: ${{ steps.state.outputs.state }}
+      pr: ${{ steps.state.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/qt_ci.py clone --dest .qt-clones
+      - id: state
+        env:
+          EVENT: ${{ github.event_name }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            python3 scripts/qt_ci.py pr-state --component graph --sha "$GITHUB_SHA"
+            base=$(git -C .qt-clones/graph rev-parse "$GITHUB_SHA^1")
+            pr=$(jq -nc --arg repo "$GITHUB_REPOSITORY" --argjson number "$NUMBER" \
+              --arg head "$HEAD_SHA" --arg merge "$GITHUB_SHA" --arg base "$base" \
+              '{component: "graph", repo: $repo, number: $number, head_sha: $head,
+                merge_sha: $merge, base_sha: $base}')
+            echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          else
+            python3 scripts/qt_ci.py state-at --component graph --sha "$GITHUB_SHA"
+          fi
+
+  test:
+    needs: resolve
+    uses: ./.github/workflows/qt-test.yml
+    with:
+      run_id: graph-${{ github.run_id }}
+      kind: ${{ github.event_name == 'pull_request' && 'pr' || 'main' }}
+      state: ${{ needs.resolve.outputs.state }}
+      created_by: ${{ github.event_name == 'pull_request' && '' || 'graph' }}
+      pr: ${{ needs.resolve.outputs.pr }}
+      runs: 1
+      shards: 2
+    secrets: inherit

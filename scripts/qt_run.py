@@ -106,9 +106,18 @@ def make_manifest(
         "runs_per_case": runs,
         "shards": shards,
         "seed": seed,
-        "producer": producer or {"repo": "local", "run_url": ""},
+        "producer": producer or _producer(),
         "tools": {"python": sys.version.split()[0]},
     }
+
+
+def _producer() -> dict[str, str]:
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return {"repo": "local", "run_url": ""}
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    repo = os.environ["GITHUB_REPOSITORY"]
+    run = os.environ["GITHUB_RUN_ID"]
+    return {"repo": repo, "run_url": f"{server}/{repo}/actions/runs/{run}"}
 
 
 def local_versions(components: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:

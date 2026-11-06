@@ -1,0 +1,57 @@
+# A component repo (qt-data, ...) changed main or a pull request: test that state once.
+# Sent by qt-component-trigger.yml, which component repos call.
+name: qt (component)
+
+on:
+  repository_dispatch:
+    types: [qt-component-main, qt-component-pr]
+
+concurrency:
+  group: >-
+    ${{ github.event.action == 'qt-component-pr'
+        && format('qt-pr-{0}-{1}', github.event.client_payload.repo, github.event.client_payload.number)
+        || format('qt-main-{0}-{1}', github.event.client_payload.component, github.event.client_payload.sha) }}
+  cancel-in-progress: ${{ github.event.action == 'qt-component-pr' }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      state: ${{ steps.state.outputs.state }}
+      pr: ${{ steps.state.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/qt_ci.py clone --dest .qt-clones
+      - id: state
+        env:
+          ACTION: ${{ github.event.action }}
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          component=$(jq -r .component <<<"$PAYLOAD")
+          if [ "$ACTION" = qt-component-pr ]; then
+            merge=$(jq -r .merge_sha <<<"$PAYLOAD")
+            python3 scripts/qt_ci.py pr-state --component "$component" --sha "$merge"
+            base=$(git -C ".qt-clones/$component" rev-parse "$merge^1")
+            pr=$(jq -c --arg base "$base" \
+              '{component, repo, number: (.number | tonumber), head_sha, merge_sha, base_sha: $base}' \
+              <<<"$PAYLOAD")
+            echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          else
+            python3 scripts/qt_ci.py state-at --component "$component" --sha "$(jq -r .sha <<<"$PAYLOAD")"
+          fi
+
+  test:
+    needs: resolve
+    uses: ./.github/workflows/qt-test.yml
+    with:
+      run_id: graph-${{ github.run_id }}
+      kind: ${{ github.event.action == 'qt-component-pr' && 'pr' || 'main' }}
+      state: ${{ needs.resolve.outputs.state }}
+      created_by: ${{ github.event.action == 'qt-component-pr' && '' || github.event.client_payload.component }}
+      pr: ${{ needs.resolve.outputs.pr }}
+      runs: 1
+      shards: 2
+    secrets: inherit

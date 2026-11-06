@@ -1,0 +1,55 @@
+# Every main state of the last week that has no nightly run yet, 10 runs per case.
+name: qt (nightly)
+
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: qt-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      states: ${{ steps.list.outputs.states }}
+      count: ${{ steps.list.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/qt_ci.py clone --dest .qt-clones
+      - id: list
+        run: |
+          python3 scripts/qt_ci.py nightly-states --run-prefix "graph-$GITHUB_RUN_ID" \
+            --lookback-days 7 --max-states 20
+      - name: Summary
+        env:
+          COUNT: ${{ steps.list.outputs.count }}
+          BACKLOG: ${{ steps.list.outputs.backlog }}
+        run: |
+          echo "States to test tonight: $COUNT; left for the next nights: $BACKLOG" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BACKLOG" != 0 ]; then
+            echo "::warning::$BACKLOG states wait for a later nightly; states older than 7 days are never tested"
+          fi
+
+  test:
+    needs: list
+    if: needs.list.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        item: ${{ fromJSON(needs.list.outputs.states) }}
+    uses: ./.github/workflows/qt-test.yml
+    with:
+      run_id: ${{ matrix.item.run_id }}
+      kind: nightly
+      state: ${{ matrix.item.state }}
+      created_by: ${{ matrix.item.created_by }}
+      runs: 10
+      shards: 2
+    secrets: inherit
