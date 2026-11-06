@@ -31,14 +31,18 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 QUALITY_TESTS = "tests/quality"
 
 
-def state_key(shas: dict[str, str]) -> str:
-    """Must match the analyzer's definition: sorted `name=sha` lines, SHA-256."""
+def state_id(shas: dict[str, str]) -> str:
+    """This repo's own id for a state, e.g. for the nightly's bookkeeping.
+
+    Not part of the contract: the analyzer computes its own state keys from the
+    component versions in the manifest.
+    """
     text = "\n".join(f"{name}={sha}" for name, sha in sorted(shas.items()))
-    return "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
 def load_components(root: Path = ROOT) -> dict[str, dict[str, str]]:
@@ -108,7 +112,6 @@ def make_manifest(
     producer: dict[str, str] | None = None,
     markers: list[str] | None = None,
 ) -> dict[str, Any]:
-    shas = {name: v["sha"] for name, v in versions.items()}
     if markers and shards != len(markers):
         raise ValueError(f"{shards} shards for {len(markers)} markers")
     manifest = {
@@ -116,7 +119,7 @@ def make_manifest(
         "run_id": run_id,
         "kind": kind,
         "created_at": _now(),
-        "state": {"key": state_key(shas), "created_by": created_by, "components": versions},
+        "state": {"created_by": created_by, "components": versions},
         "pr": pr,
         "runs_per_case": runs,
         "shards": shards,

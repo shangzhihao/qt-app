@@ -6,10 +6,9 @@ import pytest
 import qt_run
 
 
-def test_state_key_matches_the_analyzer_contract():
-    # Same vector as the analyzer: sha256 of "data=d1\ngraph=g1".
-    assert qt_run.state_key({"graph": "g1", "data": "d1"}) == (
-        "sha256:" + __import__("hashlib").sha256(b"data=d1\ngraph=g1").hexdigest()
+def test_state_id_ignores_component_order():
+    assert qt_run.state_id({"graph": "g1", "data": "d1"}) == qt_run.state_id(
+        {"data": "d1", "graph": "g1"}
     )
 
 
@@ -53,9 +52,8 @@ def test_local_run_has_one_pytest_instance_per_marker(tmp_path):
     qt_run.main(["local", "--run-id", "r1", "--runs", "2", "--seed", "7", "--out", str(tmp_path)])
     run_dir = tmp_path / "r1"
     manifest = json.loads((run_dir / "manifest.json").read_text())
-    assert manifest["state"]["key"] == qt_run.state_key(
-        {n: v["sha"] for n, v in manifest["state"]["components"].items()}
-    )
+    assert manifest["schema_version"] == 2
+    assert "key" not in manifest["state"]  # the analyzer computes state keys
     assert set(manifest["state"]["components"]) == {"graph", "data"}
     assert manifest["shards"] == 2
     assert manifest["shard_markers"] == ["core", "extended"]

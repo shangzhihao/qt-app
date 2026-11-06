@@ -24,7 +24,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from qt_run import env_name, load_components, state_key
+from qt_run import env_name, load_components, state_id
 
 INDEX_URL = "https://raw.githubusercontent.com/shangzhihao/qt-analyzer/qt-results/index/runs.jsonl"
 
@@ -106,6 +106,29 @@ def pr_state(
     return state
 
 
+def pr_info(
+    component: str,
+    merge_sha: str,
+    state: State,
+    clones: dict[str, Path],
+    *,
+    repo: str,
+    number: int,
+    head_sha: str,
+) -> dict[str, Any]:
+    """PR details for the manifest, including the main state to compare with:
+    the PR state with the PR's component at the merge commit's first parent."""
+    base = git(clones[component], "rev-parse", f"{merge_sha}^1")
+    return {
+        "component": component,
+        "repo": repo,
+        "number": number,
+        "head_sha": head_sha,
+        "merge_sha": merge_sha,
+        "baseline": {name: v["sha"] for name, v in state.items()} | {component: base},
+    }
+
+
 def main_states_since(
     since: datetime, clones: dict[str, Path], components: dict[str, dict[str, str]]
 ) -> list[tuple[str, State]]:
@@ -128,7 +151,7 @@ def main_states_since(
 
 
 def nightly_evaluated(index_lines: list[str]) -> set[str]:
-    """State keys that already have a complete nightly run."""
+    """Ids (`state_id`) of states that already have a complete nightly run."""
     keys = set()
     for line in index_lines:
         if not line.strip():
@@ -136,7 +159,8 @@ def nightly_evaluated(index_lines: list[str]) -> set[str]:
         entry = json.loads(line)
         manifest = entry.get("manifest") or {}
         if entry.get("status") == "complete" and manifest.get("kind") == "nightly":
-            keys.add(manifest["state"]["key"])
+            components = manifest["state"]["components"]
+            keys.add(state_id({name: c["sha"] for name, c in components.items()}))
     return keys
 
 
@@ -165,7 +189,7 @@ def nightly_states(
     done = nightly_evaluated(index_lines)
     todo = []
     for created_by, state in main_states_since(since, clones, components):
-        key = state_key({n: v["sha"] for n, v in state.items()})
+        key = state_id({n: v["sha"] for n, v in state.items()})
         if key not in done and all(t["key"] != key for t in todo):
             todo.append({"key": key, "created_by": created_by, "state": state})
     selected = todo[:max_states]
@@ -216,7 +240,11 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--clones", type=Path, default=Path(".qt-clones"))
         p.add_argument("--component", required=True)
-        p.add_argument("--sha", required=True)
+        p.add_argument("--sha", required=True, help="pushed commit, or a PR's merge commit")
+        if name == "pr-state":
+            p.add_argument("--repo", required=True, help="repository of the PR")
+            p.add_argument("--number", type=int, required=True)
+            p.add_argument("--head", required=True, help="PR head commit")
     p = sub.add_parser("nightly-states")
     p.add_argument("--clones", type=Path, default=Path(".qt-clones"))
     p.add_argument("--run-prefix", required=True)
@@ -251,9 +279,14 @@ def main(argv: list[str] | None = None) -> int:
         )  # fmt: skip
         _github_output(states=json.dumps(states), count=str(len(states)), backlog=str(backlog))
         return 0
-    make = state_at if args.command == "state-at" else pr_state
+    if args.command == "pr-state":
+        state = pr_state(args.component, args.sha, clones, components)
+        pr = pr_info(args.component, args.sha, state, clones, repo=args.repo,
+                     number=args.number, head_sha=args.head)  # fmt: skip
+        _github_output(state=json.dumps(state), pr=json.dumps(pr))
+        return 0
     try:
-        state = make(args.component, args.sha, clones, components)
+        state = state_at(args.component, args.sha, clones, components)
     except NoState as error:
         raise SystemExit(str(error)) from None
     _github_output(state=json.dumps(state))

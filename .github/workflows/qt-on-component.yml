@@ -32,13 +32,9 @@ jobs:
         run: |
           component=$(jq -r .component <<<"$PAYLOAD")
           if [ "$ACTION" = qt-component-pr ]; then
-            merge=$(jq -r .merge_sha <<<"$PAYLOAD")
-            python3 scripts/qt_ci.py pr-state --component "$component" --sha "$merge"
-            base=$(git -C ".qt-clones/$component" rev-parse "$merge^1")
-            pr=$(jq -c --arg base "$base" \
-              '{component, repo, number: (.number | tonumber), head_sha, merge_sha, base_sha: $base}' \
-              <<<"$PAYLOAD")
-            echo "pr=$pr" >> "$GITHUB_OUTPUT"
+            python3 scripts/qt_ci.py pr-state --component "$component" \
+              --sha "$(jq -r .merge_sha <<<"$PAYLOAD")" --repo "$(jq -r .repo <<<"$PAYLOAD")" \
+              --number "$(jq -r .number <<<"$PAYLOAD")" --head "$(jq -r .head_sha <<<"$PAYLOAD")"
           else
             python3 scripts/qt_ci.py state-at --component "$component" --sha "$(jq -r .sha <<<"$PAYLOAD")"
           fi
