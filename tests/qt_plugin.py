@@ -4,8 +4,9 @@ Tests stay plain pytest. For every test item the plugin records, as report
 user_properties (exported by `--report-log`):
 
 - qt_case_key: hash of the test's path, qualified name and parameter values
-- qt_definition_hash: hash of the test's source plus its module's optional
-  `qt_definition(**params)` (data that defines what a correct result is)
+- qt_definition_hash: hash of the test's body (without decorators, comments or
+  formatting) plus its module's optional `qt_definition(**params)` (data that
+  defines what a correct result is)
 - qt_family: the module's optional `qt_family(**params)`, else the test name
 - qt_repeat, qt_hrid
 
@@ -16,12 +17,14 @@ one marker per pytest instance runs every test exactly once).
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import hashlib
 import inspect
 import json
 import random
 import re
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +85,16 @@ def canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, default=_encode, ensure_ascii=False)
 
 
+def function_source(function: Any) -> str:
+    """The function without decorators, normalised: markers, parametrization,
+    comments and formatting do not change what a test checks."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    node = tree.body[0]
+    assert isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    node.decorator_list = []
+    return ast.unparse(node)
+
+
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -112,7 +125,7 @@ def identity(item: pytest.Function) -> dict[str, Any]:
         raise pytest.UsageError(f"{item.nodeid}: parameter {error}") from None
     return {
         "qt_case_key": _sha(f"{name}\n{params_json}")[:16],
-        "qt_definition_hash": _sha(inspect.getsource(item.function) + "\n" + definition_json)[:16],
+        "qt_definition_hash": _sha(function_source(item.function) + "\n" + definition_json)[:16],
         "qt_family": _module_hook(item, "qt_family", params) or name,
         "qt_repeat": all_params.get(REPEAT, 0),
         "qt_hrid": _REPEAT_ID.sub("", item.name).removesuffix("[]"),

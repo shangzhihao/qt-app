@@ -150,3 +150,21 @@ def test_one_instance_per_marker_covers_every_test_once(pytester):
         calls = run(pytester, "--qt-markers=core,extended", "-m", marker)
         seen += [c["qt_hrid"] for c in calls]
     assert sorted(seen) == ["test_marked[a]", "test_marked[b]"]
+
+
+def test_definition_ignores_decorators_comments_and_formatting(pytester):
+    pytester.makepyfile(test_suite=SUITE)
+    first = {c["qt_hrid"]: c["qt_definition_hash"] for c in run(pytester)}
+    changed = SUITE.replace(
+        '@pytest.mark.parametrize("x", ["a", "b"])',
+        '@pytest.mark.core\n@pytest.mark.parametrize(  # comment\n    "x", ["a", "b"]\n)',
+    ).replace(
+        "    assert qt_rng.random() < 2", "    # same check\n    assert qt_rng.random()  <  2"
+    )
+    pytester.makepyfile(test_suite=changed)
+    pytester.makeini("[pytest]\nmarkers =\n    core: c\n")
+    assert {c["qt_hrid"]: c["qt_definition_hash"] for c in run(pytester)} == first
+
+    pytester.makepyfile(test_suite=SUITE.replace("< 2", "< 3"))
+    second = {c["qt_hrid"]: c["qt_definition_hash"] for c in run(pytester)}
+    assert second["test_param[a]"] != first["test_param[a]"]
