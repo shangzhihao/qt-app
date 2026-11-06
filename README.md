@@ -11,7 +11,7 @@ so either repository can cause a regression.
 - `tests/quality/`: the answer-quality cases (200, in 10 topics). These are the
   only tests whose logs are analysed. Each case carries exactly one marker,
   `core` (5 topics) or `extended` (5 topics).
-- `qt.toml`: splits a run into one pytest instance per marker (`-m core`,
+- `[tool.qt.run]` in `pyproject.toml`: splits a run into one pytest instance per marker (`-m core`,
   `-m extended`), each on its own CI runner with its own report log. The
   plugin stops the run if a case has no marker or more than one.
 - `tests/qt_plugin.py`: pytest plugin that gives every case an automatic
@@ -20,7 +20,7 @@ so either repository can cause a regression.
 - `tests/infra/`: tests of the plugin and the run script.
 - `scripts/qt_run.py`: produces a run (manifest + one gzipped pytest report log
   per shard) for qt-analyzer.
-- `components.toml`: components whose content affects quality.
+- `[tool.qt.components]` in `pyproject.toml`: components whose content affects quality.
 
 ## Usage
 

@@ -29,6 +29,23 @@ markers = [
 ]
 testpaths = ["tests"]
 
+# Quality tracking. Components are repos whose content affects answer quality:
+# qt-graph itself, and every other one checked out at the tested version and
+# exposed to the tests as QT_COMPONENT_<NAME>_PATH.
+[tool.qt.components.graph]
+repo = "shangzhihao/qt-graph"
+branch = "main"
+
+[tool.qt.components.data]
+repo = "shangzhihao/qt-data"
+branch = "main"
+
+# A run is split into one pytest instance (shard) per marker; every quality
+# case carries exactly one of them, which the qt plugin checks. Without
+# markers, runs are split by case-key hash.
+[tool.qt.run]
+markers = ["core", "extended"]
+
 [tool.ruff]
 line-length = 100
 
