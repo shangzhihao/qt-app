@@ -60,5 +60,4 @@ jobs:
       created_by: ${{ github.event_name == 'pull_request' && '' || 'graph' }}
       pr: ${{ needs.resolve.outputs.pr }}
       runs: 1
-      shards: 2
     secrets: inherit

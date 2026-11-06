@@ -1,12 +1,15 @@
 """Produce quality-tracking runs: a manifest plus one gzipped report log per shard.
 
-    python scripts/qt_run.py manifest --run-id ID --kind main --runs 1 --shards 2 --out DIR
+    python scripts/qt_run.py manifest --run-id ID --kind main --runs 1 --out DIR
     python scripts/qt_run.py shard --manifest DIR/ID/manifest.json --index 1
-    python scripts/qt_run.py local --kind main --runs 1 --shards 2 --out qt-runs
+    python scripts/qt_run.py local --kind main --runs 1 --out qt-runs
 
-CI calls `manifest` once and `shard` once per runner; `local` does both on one
-machine. Component versions come from `--state` (CI) or from the local
-checkouts: qt-graph itself, and every other component in components.toml from
+A run is split into one pytest instance (shard) per marker listed in qt.toml;
+without markers it is split by case-key hash into `--shards` parts. CI calls
+`manifest` once and `shard` once per runner; `local` does both on one machine.
+
+Component versions come from `--state` (CI) or from the local checkouts:
+qt-graph itself, and every other component in components.toml from
 QT_COMPONENT_<NAME>_PATH or a sibling directory named after its repo.
 """
 
@@ -41,6 +44,15 @@ def state_key(shas: dict[str, str]) -> str:
 def load_components(root: Path = ROOT) -> dict[str, dict[str, str]]:
     with (root / "components.toml").open("rb") as f:
         return tomllib.load(f)["components"]
+
+
+def shard_markers(root: Path = ROOT) -> list[str]:
+    """Markers that split a run into pytest instances, one per marker (qt.toml)."""
+    path = root / "qt.toml"
+    if not path.exists():
+        return []
+    with path.open("rb") as f:
+        return list(tomllib.load(f).get("run", {}).get("markers", []))
 
 
 def env_name(component: str) -> str:
@@ -94,9 +106,12 @@ def make_manifest(
     seed: int,
     pr: dict[str, Any] | None = None,
     producer: dict[str, str] | None = None,
+    markers: list[str] | None = None,
 ) -> dict[str, Any]:
     shas = {name: v["sha"] for name, v in versions.items()}
-    return {
+    if markers and shards != len(markers):
+        raise ValueError(f"{shards} shards for {len(markers)} markers")
+    manifest = {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
         "kind": kind,
@@ -109,6 +124,9 @@ def make_manifest(
         "producer": producer or _producer(),
         "tools": {"python": sys.version.split()[0]},
     }
+    if markers:
+        manifest["shard_markers"] = markers  # shard i runs `-m markers[i-1]`
+    return manifest
 
 
 def _producer() -> dict[str, str]:
@@ -144,6 +162,11 @@ def run_shard(manifest_path: Path, index: int, root: Path = ROOT) -> Path:
     """Run one shard of the quality tests and store its gzipped report log next to the manifest."""
     manifest = json.loads(manifest_path.read_text())
     shards = manifest["shards"]
+    markers = manifest.get("shard_markers")
+    if markers:
+        selection = ["-m", markers[index - 1], f"--qt-markers={','.join(markers)}"]
+    else:
+        selection = [f"--qt-shard={index}/{shards}"]
     env = os.environ.copy()
     for name, path in component_paths(load_components(root), root).items():
         if name != "graph":
@@ -152,7 +175,7 @@ def run_shard(manifest_path: Path, index: int, root: Path = ROOT) -> Path:
         log = Path(tmp) / "report.jsonl"
         command = [
             sys.executable, "-m", "pytest", QUALITY_TESTS, "-q", "-p", "no:cacheprovider",
-            f"--qt-runs={manifest['runs_per_case']}", f"--qt-shard={index}/{shards}",
+            f"--qt-runs={manifest['runs_per_case']}", *selection,
             f"--qt-seed={manifest['seed']}", f"--report-log={log}",
         ]  # fmt: skip
         result = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True)
@@ -174,7 +197,9 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--run-id")
         p.add_argument("--kind", choices=["pr", "main", "nightly"], default="main")
         p.add_argument("--runs", type=int, default=1)
-        p.add_argument("--shards", type=int, default=2)
+        p.add_argument(
+            "--shards", type=int, help="hash shards when qt.toml lists no markers (default 2)"
+        )
         p.add_argument("--out", type=Path, default=ROOT / "qt-runs")
         p.add_argument("--created-by", default="graph")
         p.add_argument("--seed", type=int, help="default: random")
@@ -193,20 +218,25 @@ def main(argv: list[str] | None = None) -> int:
     versions = json.loads(args.state) if args.state else local_versions(load_components())
     pr = json.loads(args.pr) if args.pr else None
     run_id = args.run_id or f"local-{datetime.now(UTC):%Y%m%dT%H%M%S}-{seed % 10000:04d}"
+    markers = shard_markers()
+    if markers and args.shards not in (None, len(markers)):
+        parser.error(f"qt.toml splits runs by {len(markers)} markers; --shards must match")
+    shards = len(markers) if markers else (args.shards or 2)
     manifest = make_manifest(
         run_id=run_id,
         kind=args.kind,
         versions=versions,
         created_by=None if args.kind == "pr" else args.created_by,
         runs=args.runs,
-        shards=args.shards,
+        shards=shards,
         seed=seed,
         pr=pr,
+        markers=markers,
     )
     path = write_manifest(args.out, manifest)
     print(path)
     if args.command == "local":
-        for index in range(1, args.shards + 1):
+        for index in range(1, shards + 1):
             print(run_shard(path, index))
     return 0
 

@@ -114,3 +114,39 @@ def test_draw(qt_rng):
     assert draws[0]
     assert draws[0] == draws[1]
     assert draws[0] != draws[2]
+
+
+MARKED = """
+import pytest
+
+@pytest.mark.parametrize("x", [
+    pytest.param("a", marks=pytest.mark.core),
+    pytest.param("b", marks=pytest.mark.extended),
+    {extra}
+])
+def test_marked(x):
+    pass
+"""
+
+
+@pytest.mark.parametrize(
+    "extra, problem",
+    [
+        ("pytest.param('c')", "none"),
+        ("pytest.param('d', marks=[pytest.mark.core, pytest.mark.extended])", "core, extended"),
+    ],
+)
+def test_every_test_needs_exactly_one_shard_marker(pytester, extra, problem):
+    pytester.makepyfile(test_suite=MARKED.format(extra=extra))
+    result = pytester.runpytest("-p", "qt_plugin", "--qt-markers=core,extended", "-m", "core")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines([f"*exactly one of*({problem})*"])
+
+
+def test_one_instance_per_marker_covers_every_test_once(pytester):
+    pytester.makepyfile(test_suite=MARKED.format(extra=""))
+    seen = []
+    for marker in ("core", "extended"):
+        calls = run(pytester, "--qt-markers=core,extended", "-m", marker)
+        seen += [c["qt_hrid"] for c in calls]
+    assert sorted(seen) == ["test_marked[a]", "test_marked[b]"]

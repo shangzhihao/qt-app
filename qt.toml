@@ -1,0 +1,5 @@
+# How CI splits a run into pytest instances (shards). One instance per marker:
+# every quality case carries exactly one of these markers, which the qt plugin
+# checks before running. Without markers, runs are split by case-key hash.
+[run]
+markers = ["core", "extended"]

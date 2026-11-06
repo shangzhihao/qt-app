@@ -9,7 +9,9 @@ user_properties (exported by `--report-log`):
 - qt_family: the module's optional `qt_family(**params)`, else the test name
 - qt_repeat, qt_hrid
 
-Options: --qt-runs N, --qt-shard i/n, --qt-seed S.
+Options: --qt-runs N, --qt-shard i/n, --qt-seed S, and --qt-markers a,b to
+require that every test carries exactly one of these markers (so selecting
+one marker per pytest instance runs every test exactly once).
 """
 
 from __future__ import annotations
@@ -34,6 +36,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--qt-runs", type=int, default=1, help="runs per test case")
     group.addoption("--qt-shard", default="1/1", help="run shard i of n, e.g. 2/4")
     group.addoption("--qt-seed", type=int, default=0, help="seed of this run")
+    group.addoption(
+        "--qt-markers",
+        default="",
+        help="comma-separated markers; every test must carry exactly one of them",
+    )
 
 
 def _shard(config: pytest.Config) -> tuple[int, int]:
@@ -112,7 +119,24 @@ def identity(item: pytest.Function) -> dict[str, Any]:
     }
 
 
+def _check_markers(config: pytest.Config, items: list[pytest.Item]) -> None:
+    required = {m for m in config.getoption("qt_markers").split(",") if m}
+    if not required:
+        return
+    wrong = []
+    for item in items:
+        found = {m.name for m in item.iter_markers()} & required
+        if len(found) != 1:
+            wrong.append(f"{item.nodeid} ({', '.join(sorted(found)) or 'none'})")
+    if wrong:
+        shown = "; ".join(wrong[:5]) + (f" and {len(wrong) - 5} more" if len(wrong) > 5 else "")
+        raise pytest.UsageError(f"every test needs exactly one of {sorted(required)}: {shown}")
+
+
+# tryfirst: see every item before `-m` deselects the other markers.
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    _check_markers(config, items)
     index, total = _shard(config)
     keep, drop = [], []
     for item in items:

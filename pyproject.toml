@@ -22,7 +22,11 @@ packages = ["src/qt_graph"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests", "scripts"]
-addopts = "-p qt_plugin"
+addopts = "-p qt_plugin --strict-markers"
+markers = [
+    "core: core topics, run as their own pytest instance",
+    "extended: other topics, run as their own pytest instance",
+]
 testpaths = ["tests"]
 
 [tool.ruff]

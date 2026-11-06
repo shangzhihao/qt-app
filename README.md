@@ -9,7 +9,11 @@ so either repository can cause a regression.
 ## Layout
 
 - `tests/quality/`: the answer-quality cases (200, in 10 topics). These are the
-  only tests whose logs are analysed.
+  only tests whose logs are analysed. Each case carries exactly one marker,
+  `core` (5 topics) or `extended` (5 topics).
+- `qt.toml`: splits a run into one pytest instance per marker (`-m core`,
+  `-m extended`), each on its own CI runner with its own report log. The
+  plugin stops the run if a case has no marker or more than one.
 - `tests/qt_plugin.py`: pytest plugin that gives every case an automatic
   identity (no IDs written by hand), repeats (`--qt-runs`), sharding
   (`--qt-shard i/n`) and a per-run seed (`--qt-seed`).
@@ -23,7 +27,7 @@ so either repository can cause a regression.
 ```sh
 uv sync
 uv run pytest tests/infra                      # infrastructure tests
-uv run python scripts/qt_run.py local --runs 10 --shards 2 --out qt-runs
+uv run python scripts/qt_run.py local --runs 10 --out qt-runs
 uv run --project ../qt-analyzer qt-analyzer ingest --logs qt-runs --results ../qt-results
 ```
 

@@ -53,5 +53,4 @@ jobs:
       created_by: ${{ github.event.action == 'qt-component-pr' && '' || github.event.client_payload.component }}
       pr: ${{ needs.resolve.outputs.pr }}
       runs: 1
-      shards: 2
     secrets: inherit
