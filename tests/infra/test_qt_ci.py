@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 
 import pytest
 import qt_ci
-from qt_run import state_key
 
 COMPONENTS = {
     "graph": {"repo": "me/qt-graph", "branch": "main"},
@@ -75,9 +74,7 @@ def test_pr_state_uses_main_heads_of_other_components(repos):
 def test_nightly_lists_unevaluated_states_oldest_first(repos):
     clones, sha = repos
     now = datetime(2026, 11, 2, tzinfo=UTC)
-    g1_state = {"graph": sha["g1"], "data": sha["d0"]}
-    index = [json.dumps({"status": "complete", "manifest": {
-        "kind": "nightly", "state": {"key": state_key(g1_state)}}})]  # fmt: skip
+    index = [_index_line("complete", "nightly", {"graph": sha["g1"], "data": sha["d0"]})]
 
     # d0 has no graph commit before it, so the window starts after it
     states, backlog = qt_ci.nightly_states(
@@ -90,13 +87,39 @@ def test_nightly_lists_unevaluated_states_oldest_first(repos):
     assert _shas(json.loads(states[0]["state"])) == {"graph": sha["g1"], "data": sha["d1"]}
 
 
+def _index_line(status, kind, shas):
+    components = {
+        name: {"repo": "x", "sha": sha, "committed_at": "t"} for name, sha in shas.items()
+    }
+    return json.dumps(
+        {"status": status, "manifest": {"kind": kind, "state": {"components": components}}}
+    )
+
+
 def test_nightly_evaluated_ignores_incomplete_and_non_nightly_runs():
     lines = [
-        json.dumps(
-            {"status": "incomplete", "manifest": {"kind": "nightly", "state": {"key": "a"}}}
-        ),
-        json.dumps({"status": "complete", "manifest": {"kind": "main", "state": {"key": "b"}}}),
-        json.dumps({"status": "complete", "manifest": {"kind": "nightly", "state": {"key": "c"}}}),
+        _index_line("incomplete", "nightly", {"graph": "a"}),
+        _index_line("complete", "main", {"graph": "b"}),
+        _index_line("complete", "nightly", {"graph": "c"}),
         "",
     ]
-    assert qt_ci.nightly_evaluated(lines) == {"c"}
+    assert qt_ci.nightly_evaluated(lines) == {qt_ci.state_id({"graph": "c"})}
+
+
+def test_pr_info_names_the_merge_parent_as_baseline(repos):
+    clones, sha = repos
+    # a merge commit on data whose first parent is d1
+    data = clones["data"]
+    _git(data, "checkout", "-q", "-b", "feature", sha["d0"])
+    (data / "other").write_text("x")
+    _git(data, "add", ".")
+    _git(data, "commit", "-q", "-m", "feature", date="2026-11-01T05:00:00+00:00")
+    _git(data, "checkout", "-q", "--detach", sha["d1"])
+    _git(data, "merge", "-q", "--no-ff", "-m", "merge", "feature", date="2026-11-01T06:00:00+00:00")
+    merge = _git(data, "rev-parse", "HEAD")
+
+    state = qt_ci.pr_state("data", merge, clones, COMPONENTS)
+    pr = qt_ci.pr_info("data", merge, state, clones, repo="me/qt-data", number=4, head_sha="h")
+
+    assert pr["merge_sha"] == merge and pr["number"] == 4
+    assert pr["baseline"] == {"graph": sha["g2"], "data": sha["d1"]}

@@ -39,13 +39,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT" = pull_request ]; then
-            python3 scripts/qt_ci.py pr-state --component graph --sha "$GITHUB_SHA"
-            base=$(git -C .qt-clones/graph rev-parse "$GITHUB_SHA^1")
-            pr=$(jq -nc --arg repo "$GITHUB_REPOSITORY" --argjson number "$NUMBER" \
-              --arg head "$HEAD_SHA" --arg merge "$GITHUB_SHA" --arg base "$base" \
-              '{component: "graph", repo: $repo, number: $number, head_sha: $head,
-                merge_sha: $merge, base_sha: $base}')
-            echo "pr=$pr" >> "$GITHUB_OUTPUT"
+            python3 scripts/qt_ci.py pr-state --component graph --sha "$GITHUB_SHA" \
+              --repo "$GITHUB_REPOSITORY" --number "$NUMBER" --head "$HEAD_SHA"
           else
             python3 scripts/qt_ci.py state-at --component graph --sha "$GITHUB_SHA"
           fi
