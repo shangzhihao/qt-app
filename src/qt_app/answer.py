@@ -3,6 +3,7 @@
 The chance of a correct answer is `base_p x graph factor x knowledge quality`:
 the graph factor comes from this repo (quality.toml), the knowledge quality
 from the data component (kb.json), so either repo can cause a regression.
+The answer text itself does not matter; only whether it matches `correct`.
 """
 
 from __future__ import annotations
