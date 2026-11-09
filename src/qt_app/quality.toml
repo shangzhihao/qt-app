@@ -11,3 +11,10 @@ housing = 0.7
 income = 1.0
 residence = 1.0
 taxes = 1.0
+
+# Day-to-day noise with no code or data change: each UTC day draws one overall
+# shift and one per topic (standard deviations below), shared by every run that
+# day. 0 turns it off.
+[daily_noise]
+overall = 0.02
+topic = 0.03

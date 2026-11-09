@@ -2,9 +2,12 @@
 
 Toy product for the quality-tracking prototype (plays the role of vws-graph).
 Its answers are correct with a probability, like an LLM's:
-`base_p × graph factor × knowledge quality`. The graph factors live here
-(`src/qt_app/quality.toml`), the knowledge quality in `qt-dep` (`kb.json`),
-so either repository can cause a regression.
+`base_p × graph factor × knowledge quality × daily factor`. The graph factors
+live here (`src/qt_app/quality.toml`), the knowledge quality in `qt-dep`
+(`kb.json`), so either repository can cause a regression. The daily factor is
+noise with no code or data change: each UTC day draws one overall and one
+per-topic shift (`[daily_noise]` in `quality.toml`, 0 turns it off), shared by
+every run that day. Each pytest run prints that day's factors in its header.
 
 ## Layout
 
