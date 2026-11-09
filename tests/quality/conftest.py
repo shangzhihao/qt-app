@@ -1,14 +1,9 @@
-import os
-from pathlib import Path
-
 import pytest
 
-from qt_app.answer import DATA_PATH_ENV, knowledge
+from qt_app.answer import knowledge
 
 
 @pytest.fixture(scope="session")
-def kb(pytestconfig: pytest.Config) -> dict[str, float]:
-    """Knowledge from the data component; defaults to a sibling qt-dep checkout."""
-    configured = os.environ.get(DATA_PATH_ENV)
-    path = Path(configured) if configured else pytestconfig.rootpath.parent / "qt-dep"
-    return knowledge(path)
+def kb() -> dict[str, float]:
+    """Knowledge from the data component (QT_COMPONENT_DATA_PATH or a sibling qt-dep)."""
+    return knowledge()

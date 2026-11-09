@@ -2,7 +2,8 @@
 
 The chance of a correct answer is `base_p x graph factor x knowledge quality`:
 the graph factor comes from this repo (quality.toml), the knowledge quality
-from the data component (kb.json), so either repo can cause a regression.
+from the data component (kb.json), so either repo can cause a regression. The
+questions themselves are Langfuse traces in the data component (traces.jsonl).
 The answer text itself does not matter; only whether it matches `correct`.
 """
 
@@ -31,13 +32,20 @@ def graph_factors() -> dict[str, float]:
         return tomllib.load(f)["factors"]
 
 
-def knowledge(data_path: Path | None = None) -> dict[str, float]:
-    if data_path is None:
-        configured = os.environ.get(DATA_PATH_ENV)
-        if not configured:
-            raise RuntimeError(f"{DATA_PATH_ENV} must point at a qt-dep checkout")
-        data_path = Path(configured)
-    return json.loads((data_path / "kb.json").read_text())["topics"]
+def data_path() -> Path:
+    """The data component: QT_COMPONENT_DATA_PATH, else a sibling qt-dep checkout."""
+    configured = os.environ.get(DATA_PATH_ENV)
+    return Path(configured) if configured else Path(__file__).resolve().parents[3] / "qt-dep"
+
+
+def knowledge(path: Path | None = None) -> dict[str, float]:
+    return json.loads(((path or data_path()) / "kb.json").read_text())["topics"]
+
+
+def traces(path: Path | None = None) -> list[dict]:
+    """The answer-quality cases: simulated Langfuse traces, one JSON object per line."""
+    lines = ((path or data_path()) / "traces.jsonl").read_text().splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
 
 
 def answer(
