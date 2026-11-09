@@ -1,4 +1,4 @@
-# A component repo (qt-data, ...) changed main or a pull request: test that state once.
+# A component repo (qt-dep, ...) changed main or a pull request: test that state once.
 # Sent by qt-component-trigger.yml, which component repos call.
 name: qt (component)
 

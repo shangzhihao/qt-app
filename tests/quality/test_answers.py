@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from qt_graph.answer import Question, answer
+from qt_app.answer import Question, answer
 
 with (Path(__file__).parent / "cases.toml").open("rb") as f:
     CASES = {c["id"]: c for c in tomllib.load(f)["case"]}

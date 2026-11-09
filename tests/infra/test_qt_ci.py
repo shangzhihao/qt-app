@@ -9,8 +9,8 @@ import pytest
 import qt_ci
 
 COMPONENTS = {
-    "graph": {"repo": "me/qt-graph", "branch": "main"},
-    "data": {"repo": "me/qt-data", "branch": "main"},
+    "graph": {"repo": "me/qt-app", "branch": "main"},
+    "data": {"repo": "me/qt-dep", "branch": "main"},
 }
 
 
@@ -119,7 +119,7 @@ def test_pr_info_names_the_merge_parent_as_baseline(repos):
     merge = _git(data, "rev-parse", "HEAD")
 
     state = qt_ci.pr_state("data", merge, clones, COMPONENTS)
-    pr = qt_ci.pr_info("data", merge, state, clones, repo="me/qt-data", number=4, head_sha="h")
+    pr = qt_ci.pr_info("data", merge, state, clones, repo="me/qt-dep", number=4, head_sha="h")
 
     assert pr["merge_sha"] == merge and pr["number"] == 4
     assert pr["baseline"] == {"graph": sha["g2"], "data": sha["d1"]}

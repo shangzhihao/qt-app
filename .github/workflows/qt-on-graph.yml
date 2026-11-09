@@ -1,4 +1,4 @@
-# A push to main or a pull request in qt-graph: test the resulting state once.
+# A push to main or a pull request in qt-app: test the resulting state once.
 name: qt (graph)
 
 on:
