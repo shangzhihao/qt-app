@@ -1,9 +1,9 @@
-# qt-graph
+# qt-app
 
 Toy product for the quality-tracking prototype (plays the role of vws-graph).
 Its answers are correct with a probability, like an LLM's:
 `base_p × graph factor × knowledge quality`. The graph factors live here
-(`src/qt_graph/quality.toml`), the knowledge quality in `qt-data` (`kb.json`),
+(`src/qt_graph/quality.toml`), the knowledge quality in `qt-dep` (`kb.json`),
 so either repository can cause a regression.
 
 ## Layout
@@ -19,7 +19,7 @@ so either repository can cause a regression.
   (`--qt-shard i/n`) and a per-run seed (`--qt-seed`).
 - `tests/infra/`: tests of the plugin and the run script.
 - `scripts/qt_run.py`: produces a run (manifest + one gzipped pytest report log
-  per shard) for qt-analyzer.
+  per shard) for qt-det.
 - `[tool.qt.components]` in `pyproject.toml`: components whose content affects quality.
 
 ## Usage
@@ -28,8 +28,8 @@ so either repository can cause a regression.
 uv sync
 uv run pytest tests/infra                      # infrastructure tests
 uv run python scripts/qt_run.py local --runs 10 --out qt-runs
-uv run --project ../qt-analyzer qt-analyzer ingest --logs qt-runs --results ../qt-results
+uv run --project ../qt-det qt-det ingest --logs qt-runs --results ../qt-results
 ```
 
 Other components are found through `QT_COMPONENT_<NAME>_PATH`, or as sibling
-checkouts (`../qt-data`).
+checkouts (`../qt-dep`).

@@ -9,7 +9,7 @@ without markers it is split by case-key hash into `--shards` parts. CI calls
 `manifest` once and `shard` once per runner; `local` does both on one machine.
 
 Component versions come from `--state` (CI) or from the local checkouts:
-qt-graph itself, and every other component in [tool.qt.components] from
+qt-app itself, and every other component in [tool.qt.components] from
 QT_COMPONENT_<NAME>_PATH or a sibling directory named after its repo.
 """
 

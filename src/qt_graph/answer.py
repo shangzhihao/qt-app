@@ -34,7 +34,7 @@ def knowledge(data_path: Path | None = None) -> dict[str, float]:
     if data_path is None:
         configured = os.environ.get(DATA_PATH_ENV)
         if not configured:
-            raise RuntimeError(f"{DATA_PATH_ENV} must point at a qt-data checkout")
+            raise RuntimeError(f"{DATA_PATH_ENV} must point at a qt-dep checkout")
         data_path = Path(configured)
     return json.loads((data_path / "kb.json").read_text())["topics"]
 

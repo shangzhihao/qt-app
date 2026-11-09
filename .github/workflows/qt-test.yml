@@ -1,4 +1,4 @@
-# Run the quality suite for one state and publish it as a run for qt-analyzer:
+# Run the quality suite for one state and publish it as a run for qt-det:
 # artifact qt-<run_id>-manifest plus one artifact qt-<run_id>-shard-<i> per shard.
 # Shards are pytest instances, one per marker in pyproject's [tool.qt.run].
 # Callers compute the state (scripts/qt_ci.py) and own concurrency.
@@ -105,5 +105,5 @@ jobs:
             echo "::error::QT_PAT is not set; the analyzer picks this run up on its daily pass"
             exit 1
           fi
-          gh api repos/shangzhihao/qt-analyzer/dispatches -f event_type=qt-wake \
+          gh api repos/shangzhihao/qt-det/dispatches -f event_type=qt-wake \
             -f "client_payload[run_id]=$RUN_ID"

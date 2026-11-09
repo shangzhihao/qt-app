@@ -1,5 +1,5 @@
 [project]
-name = "qt-graph"
+name = "qt-app"
 version = "0.1.0"
 description = "Toy product for the quality-tracking prototype (plays the role of vws-graph)."
 readme = "README.md"
@@ -30,14 +30,14 @@ markers = [
 testpaths = ["tests"]
 
 # Quality tracking. Components are repos whose content affects answer quality:
-# qt-graph itself, and every other one checked out at the tested version and
+# qt-app itself, and every other one checked out at the tested version and
 # exposed to the tests as QT_COMPONENT_<NAME>_PATH.
 [tool.qt.components.graph]
-repo = "shangzhihao/qt-graph"
+repo = "shangzhihao/qt-app"
 branch = "main"
 
 [tool.qt.components.data]
-repo = "shangzhihao/qt-data"
+repo = "shangzhihao/qt-dep"
 branch = "main"
 
 # A run is split into one pytest instance (shard) per marker; every quality

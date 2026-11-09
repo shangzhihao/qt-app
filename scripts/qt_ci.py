@@ -26,7 +26,7 @@ from typing import Any
 
 from qt_run import env_name, load_components, state_id
 
-INDEX_URL = "https://raw.githubusercontent.com/shangzhihao/qt-analyzer/qt-results/index/runs.jsonl"
+INDEX_URL = "https://raw.githubusercontent.com/shangzhihao/qt-det/qt-results/index/runs.jsonl"
 
 State = dict[str, dict[str, str]]  # name -> {repo, sha, committed_at}
 
