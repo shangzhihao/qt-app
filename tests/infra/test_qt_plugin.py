@@ -168,3 +168,28 @@ def test_definition_ignores_decorators_comments_and_formatting(pytester):
     pytester.makepyfile(test_suite=SUITE.replace("< 2", "< 3"))
     second = {c["qt_hrid"]: c["qt_definition_hash"] for c in run(pytester)}
     assert second["test_param[a]"] != first["test_param[a]"]
+
+
+KEYED = """
+import pytest
+
+def qt_case_key(x):
+    return {"a": "trace-a", "b": "trace-b", "c": "trace-a"}[x]
+
+@pytest.mark.parametrize("x", {xs})
+def test_param(x):
+    pass
+"""
+
+
+def test_a_module_can_name_the_case_key(pytester):
+    pytester.makepyfile(test_suite=KEYED.replace("{xs}", '["a", "b"]'))
+    calls = run(pytester, "--qt-runs=2")
+    assert keys(calls) == {"trace-a", "trace-b"}
+
+
+def test_two_cases_with_one_key_stop_the_run(pytester):
+    pytester.makepyfile(test_suite=KEYED.replace("{xs}", '["a", "c"]'))
+    result = pytester.runpytest("-p", "qt_plugin")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*case key trace-a is used by*"])

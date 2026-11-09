@@ -1,14 +1,11 @@
-"""Answer-quality cases: each passes with a probability, like an LLM evaluation."""
-
-import tomllib
-from pathlib import Path
+"""Answer-quality cases replayed from Langfuse traces: each passes with a probability,
+like an LLM evaluation. The trace id is the case's identity."""
 
 import pytest
 
-from qt_app.answer import Question, answer
+from qt_app.answer import Question, answer, traces
 
-with (Path(__file__).parent / "cases.toml").open("rb") as f:
-    CASES = {c["id"]: c for c in tomllib.load(f)["case"]}
+TRACES = {t["id"]: t for t in traces()}
 
 # Every case carries exactly one of the markers in [tool.qt.run]; CI runs one
 # pytest instance per marker.
@@ -16,28 +13,32 @@ CORE_TOPICS = {"benefits", "deadlines", "eligibility", "forms", "income"}
 
 QUESTIONS = [
     pytest.param(
-        {"id": c["id"], "topic": c["topic"], "text": c["question"]},
-        id=c["id"],
-        marks=pytest.mark.core if c["topic"] in CORE_TOPICS else pytest.mark.extended,
+        trace_id,
+        id=t["metadata"]["hrid"],
+        marks=pytest.mark.core if t["metadata"]["topic"] in CORE_TOPICS else pytest.mark.extended,
     )
-    for c in CASES.values()
+    for trace_id, t in TRACES.items()
 ]
 
 
-def qt_definition(question):
-    """What counts as correct for this question; editing it changes the definition hash."""
-    case = CASES[question["id"]]
-    return {"expected": case["expected"], "base_p": case["base_p"]}
+def qt_case_key(trace_id):
+    return trace_id
 
 
-def qt_family(question):
-    return question["topic"]
+def qt_definition(trace_id):
+    """What counts as correct for this trace; editing it changes the definition hash."""
+    t = TRACES[trace_id]
+    return {"input": t["input"], "expected": t["output"], "base_p": t["metadata"]["base_p"]}
 
 
-@pytest.mark.parametrize("question", QUESTIONS)
-def test_answer(question, qt_rng, kb):
-    case = CASES[question["id"]]
-    got = answer(
-        Question(question["topic"], question["text"]), case["expected"], case["base_p"], qt_rng, kb
-    )
-    assert got == case["expected"]
+def qt_family(trace_id):
+    return TRACES[trace_id]["metadata"]["topic"]
+
+
+@pytest.mark.parametrize("trace_id", QUESTIONS)
+def test_answer(trace_id, qt_rng, kb):
+    t = TRACES[trace_id]
+    topic, expected = t["metadata"]["topic"], t["output"]["answer"]
+    got = answer(Question(topic, t["input"]["question"]), expected, t["metadata"]["base_p"],
+                 qt_rng, kb)  # fmt: skip
+    assert got == expected

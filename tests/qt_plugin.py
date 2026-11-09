@@ -3,7 +3,9 @@
 Tests stay plain pytest. For every test item the plugin records, as report
 user_properties (exported by `--report-log`):
 
-- qt_case_key: hash of the test's path, qualified name and parameter values
+- qt_case_key: the module's optional `qt_case_key(**params)` (e.g. a Langfuse
+  trace id), else a hash of the test's path, qualified name and parameter
+  values; two test cases with the same key stop the run
 - qt_definition_hash: hash of the test's body (without decorators, comments or
   formatting) plus its module's optional `qt_definition(**params)` (data that
   defines what a correct result is)
@@ -123,8 +125,11 @@ def identity(item: pytest.Function) -> dict[str, Any]:
         definition_json = canonical(definition) if definition is not None else ""
     except TypeError as error:
         raise pytest.UsageError(f"{item.nodeid}: parameter {error}") from None
+    key = _module_hook(item, "qt_case_key", params)
+    if key is not None and not (isinstance(key, str) and key):
+        raise pytest.UsageError(f"{item.nodeid}: qt_case_key must return a non-empty string")
     return {
-        "qt_case_key": _sha(f"{name}\n{params_json}")[:16],
+        "qt_case_key": key or _sha(f"{name}\n{params_json}")[:16],
         "qt_definition_hash": _sha(function_source(item.function) + "\n" + definition_json)[:16],
         "qt_family": _module_hook(item, "qt_family", params) or name,
         "qt_repeat": all_params.get(REPEAT, 0),
@@ -152,13 +157,21 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     _check_markers(config, items)
     index, total = _shard(config)
     keep, drop = [], []
+    owners: dict[str, str] = {}  # case key -> the test case (without repeat) that has it
     for item in items:
         if not isinstance(item, pytest.Function):
             keep.append(item)
             continue
         props = identity(item)
         item.user_properties.extend(props.items())
-        (keep if int(props["qt_case_key"], 16) % total == index - 1 else drop).append(item)
+        case = _REPEAT_ID.sub("", item.nodeid)
+        if owners.setdefault(props["qt_case_key"], case) != case:
+            raise pytest.UsageError(
+                f"case key {props['qt_case_key']} is used by {owners[props['qt_case_key']]} "
+                f"and {case}"
+            )
+        shard = int(hashlib.sha256(props["qt_case_key"].encode()).hexdigest(), 16) % total
+        (keep if shard == index - 1 else drop).append(item)
     if drop:
         config.hook.pytest_deselected(items=drop)
         items[:] = keep
