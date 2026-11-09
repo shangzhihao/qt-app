@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from qt_graph.answer import DATA_PATH_ENV, knowledge
+from qt_app.answer import DATA_PATH_ENV, knowledge
 
 
 @pytest.fixture(scope="session")

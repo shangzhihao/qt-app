@@ -3,7 +3,7 @@
 Toy product for the quality-tracking prototype (plays the role of vws-graph).
 Its answers are correct with a probability, like an LLM's:
 `base_p × graph factor × knowledge quality`. The graph factors live here
-(`src/qt_graph/quality.toml`), the knowledge quality in `qt-dep` (`kb.json`),
+(`src/qt_app/quality.toml`), the knowledge quality in `qt-dep` (`kb.json`),
 so either repository can cause a regression.
 
 ## Layout
