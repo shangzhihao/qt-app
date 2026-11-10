@@ -1,7 +1,7 @@
 # Graph-side answer quality per topic (1.0 = full quality). Lowering a value
 # simulates a code regression on that topic.
 [factors]
-benefits = 1.0
+benefits = 0.85
 deadlines = 1.0
 documents = 1.0
 eligibility = 1.0
