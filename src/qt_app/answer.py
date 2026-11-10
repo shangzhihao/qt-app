@@ -1,8 +1,11 @@
 """A toy "answerer" whose correctness is random, like an LLM's.
 
-The chance of a correct answer is `base_p x graph factor x knowledge quality`:
-the graph factor comes from this repo (quality.toml), the knowledge quality
-from the data component (kb.json), so either repo can cause a regression. The
+The chance of a correct answer is
+`base_p x graph factor x knowledge quality x daily factor`: the graph factor
+comes from this repo (quality.toml), the knowledge quality from the data
+component (kb.json), so either repo can cause a regression. The daily factor is
+noise shared by every run on the same UTC day, like a model or infrastructure
+that behaves a little differently each day. The
 questions themselves are Langfuse traces in the data component (traces.jsonl).
 The answer text itself does not matter; only whether it matches `correct`.
 """
@@ -14,6 +17,7 @@ import os
 import random
 import tomllib
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from functools import cache
 from pathlib import Path
 
@@ -27,9 +31,22 @@ class Question:
 
 
 @cache
-def graph_factors() -> dict[str, float]:
+def _quality() -> dict:
     with (Path(__file__).parent / "quality.toml").open("rb") as f:
-        return tomllib.load(f)["factors"]
+        return tomllib.load(f)
+
+
+def graph_factors() -> dict[str, float]:
+    return _quality()["factors"]
+
+
+def daily_factor(topic: str, day: date | None = None) -> float:
+    """1 + an overall and a per-topic shift, both drawn from the date (UTC, default today)."""
+    noise = _quality().get("daily_noise", {})
+    day = day or datetime.now(UTC).date()
+    overall = random.Random(f"{day}").gauss(0.0, noise.get("overall", 0.0))
+    per_topic = random.Random(f"{day}:{topic}").gauss(0.0, noise.get("topic", 0.0))
+    return max(0.0, 1.0 + overall + per_topic)
 
 
 def data_path() -> Path:
@@ -55,5 +72,6 @@ def answer(
     rng: random.Random,
     kb: dict[str, float],
 ) -> str:
-    p = base_p * graph_factors().get(question.topic, 1.0) * kb.get(question.topic, 0.0)
+    p = (base_p * graph_factors().get(question.topic, 1.0) * kb.get(question.topic, 0.0)
+         * daily_factor(question.topic))  # fmt: skip
     return correct if rng.random() < p else f"wrong answer to {question.text}"
