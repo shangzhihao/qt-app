@@ -178,11 +178,16 @@ def run_shard(manifest_path: Path, index: int, root: Path = ROOT) -> Path:
     with tempfile.TemporaryDirectory() as tmp:
         log = Path(tmp) / "report.jsonl"
         command = [
-            sys.executable, "-m", "pytest", QUALITY_TESTS, "-q", "-p", "no:cacheprovider",
+            sys.executable, "-m", "pytest", QUALITY_TESTS, "-p", "no:cacheprovider",
             f"--qt-runs={manifest['runs_per_case']}", *selection,
             f"--qt-seed={manifest['seed']}", f"--report-log={log}",
         ]  # fmt: skip
         result = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True)
+        # Header lines starting with "qt " carry ground truth from the product (e.g. the
+        # day's quality factors); echo them so they show in the CI log.
+        for line in result.stdout.splitlines():
+            if line.startswith("qt "):
+                print(line)
         # 0 = all passed, 1 = some failed, 5 = empty shard: all are results.
         if result.returncode not in (0, 1, 5):
             sys.stderr.write(result.stdout + result.stderr)
